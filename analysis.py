@@ -11,6 +11,26 @@ import re
 HIST_DATA_PATH = r'e:\analytics\stock\hist-W-2016-0627'
 REPORT_DATA_PATH = r'e:\analytics\stock\report'
 
+def find_lis(s):
+    # files = sc.wholeTextFiles(DATA_FILE_PATH, use_unicode=False)
+    lis = (1, 0)    # tuple for LIS found so far in form of (period_length, starting_position)
+    start = 0   # starting position of the increasing subsequence evaluated currently
+    while start < len(s) - lis[0]:
+        last = start # last element added to the current subsequence
+        for i in range(start+1, len(s)):
+            if s.ix[i] >= s.ix[last]:
+                last = i
+            else:
+                l = last - start + 1
+                if l > lis[0]:
+                    lis = (l, start)
+                start = i
+                break
+        if last == len(s) - 1 and (last - start + 1) > lis[0]:
+            lis = (last - start + 1, start)
+            break
+    return lis
+
 def find_recent_increase(filepath):
     try:
         df = pd.read_csv(filepath, index_col=0, parse_dates=True,

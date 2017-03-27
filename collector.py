@@ -15,11 +15,6 @@ CURRENT_TERM = 2016, 3
 
 
 def collect_hist_data(start=None, end=None, type='D', exclude_cyb=True, sample=0, persist=False):
-    basics = ts.get_stock_basics()
-    codes = basics.index if not exclude_cyb else [x for x in basics.index if not x.startswith('300')]
-    hist_data = {}
-    codes_selected = codes if sample == 0 else random.sample(codes, sample)
-
     folder_name = 'hist-{}-{:%y%m%d}-{:%y%m%d}'.format(
         type,
         datetime.datetime.strptime(start, '%Y-%m-%d'),
@@ -29,6 +24,11 @@ def collect_hist_data(start=None, end=None, type='D', exclude_cyb=True, sample=0
     # if target storage path already exists, consider the data has been collected already
     if not os.path.isdir(storage_path):
         os.makedirs(storage_path)
+        basics = ts.get_stock_basics()
+        codes = basics.index if not exclude_cyb else [x for x in basics.index if not x.startswith('300')]
+        hist_data = {}
+        codes_selected = codes if sample == 0 else random.sample(codes, sample)
+        
         for code in codes_selected:
             try:
                 df = ts.get_hist_data(code, start, end, ktype=type)
@@ -53,8 +53,10 @@ def collect_report_data(year, term):
         if not os.path.exists(path):
             df = ts.get_report_data(year, term)
             df.to_csv(path)
+        return path
     except Exception as ex:
         print("error occurred in retrieving report data: ", ex)
+        return None
 
 
 def collect_basic_data():
@@ -63,6 +65,7 @@ def collect_basic_data():
     path = os.path.join(BASIC_DATA_PATH, 'basic.csv')
     if not os.path.exists(path):
         ts.get_stock_basics().to_csv(path)
+    return path
 
 
 def get_financial_data(terms=1, exclude_cyb=True, sample=0, persist=False):

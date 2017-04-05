@@ -8,22 +8,20 @@ import random
 import os.path
 import datetime
 
-HIST_DATA_BASE_FOLDER = r'c:\z_data\stock'
-REPORT_DATA_PATH = r'c:\z_data\stock\report'
-BASIC_DATA_PATH = r'c:\z_data\stock\basics'
-CURRENT_TERM = 2016, 3
-
+# CURRENT_TERM = 2016, 3
+BASE_FOLDER = r'E:\analytics\stock'
 
 def collect_hist_data(start=None, end=None, type='D', exclude_cyb=True, sample=0, persist=False):
     folder_name = 'hist-{}-{:%y%m%d}-{:%y%m%d}'.format(
         type,
         datetime.datetime.strptime(start, '%Y-%m-%d'),
         datetime.datetime.today())
-    storage_path = os.path.join(HIST_DATA_BASE_FOLDER, folder_name)
+    storage_path = os.path.join(BASE_FOLDER, folder_name)
 
     # if target storage path already exists, consider the data has been collected already
     if not os.path.isdir(storage_path):
         os.makedirs(storage_path)
+    if not os.listdir(storage_path):
         basics = ts.get_stock_basics()
         codes = basics.index if not exclude_cyb else [x for x in basics.index if not x.startswith('300')]
         hist_data = {}
@@ -47,22 +45,24 @@ def collect_hist_data(start=None, end=None, type='D', exclude_cyb=True, sample=0
 
 def collect_report_data(year, term):
     try:
-        if not os.path.isdir(REPORT_DATA_PATH):
-            os.makedirs(REPORT_DATA_PATH)
-        path = os.path.join(REPORT_DATA_PATH, '{}-{}.csv'.format(year, term))
+        report_data_path = os.path.join(BASE_FOLDER, 'report')
+        if not os.path.isdir(report_data_path):
+            os.makedirs(report_data_path)
+        path = os.path.join(report_data_path, '{}-{}.csv'.format(year, term))
         if not os.path.exists(path):
             df = ts.get_report_data(year, term)
             df.to_csv(path)
-        return path
+        return report_data_path
     except Exception as ex:
         print("error occurred in retrieving report data: ", ex)
         return None
 
 
 def collect_basic_data():
-    if not os.path.exists(BASIC_DATA_PATH):
-        os.makedirs(BASIC_DATA_PATH)
-    path = os.path.join(BASIC_DATA_PATH, 'basic.csv')
+    basic_data_path = os.path.join(BASE_FOLDER, 'basics')
+    if not os.path.exists(basic_data_path):
+        os.makedirs(basic_data_path)
+    path = os.path.join(basic_data_path, 'basic.csv')
     if not os.path.exists(path):
         ts.get_stock_basics().to_csv(path)
     return path

@@ -1,5 +1,6 @@
 __author__ = 'william'
 
+import sys
 import tushare as ts
 import pandas as pd
 import numpy as np
@@ -8,44 +9,48 @@ import random
 import os.path
 import datetime
 
-# CURRENT_TERM = 2016, 3
-BASE_FOLDER = r'E:\analytics\stock'
+from tushare.stock.fundamental import get_report_data
 
-def collect_hist_data(start=None, end=None, type='D', exclude_cyb=True, sample=0, persist=False):
-    folder_name = 'hist-{}-{:%y%m%d}-{:%y%m%d}'.format(
-        type,
-        datetime.datetime.strptime(start, '%Y-%m-%d'),
-        datetime.datetime.today())
-    storage_path = os.path.join(BASE_FOLDER, folder_name)
+BASE_FOLDER = 'data'
+root_data_path = ''
+tushare_api = ts.pro_api('3cf89e9c77146b4d041f7aea8f8e93c1ef887581a586bcb14f97f510')
 
+def tu_hist_data(folder, codes, start=None, end=None, freq='D', sample=0, persist=True):
     # if target storage path already exists, consider the data has been collected already
-    if not os.path.isdir(storage_path):
-        os.makedirs(storage_path)
-    if not os.listdir(storage_path):
-        basics = ts.get_stock_basics()
-        codes = basics.index if not exclude_cyb else [x for x in basics.index if not x.startswith('300')]
-        hist_data = {}
-        codes_selected = codes if sample == 0 else random.sample(codes, sample)
-        
-        for code in codes_selected:
+    if os.path.isdir(folder):
+        return
+
+    os.makedirs(folder)
+    hist_data = {}
+    codes_selected = codes if sample == 0 else random.sample(codes, sample)
+    
+    for code in codes_selected:
+        try:
+            df = ts.pro_bar(
+                ts_code=code,
+                asset='E',
+                adj='qfq', 
+                start_date=start.strftime('%Y%m%d'), 
+                end_date=end.strftime('%Y%m%d'), 
+                freq=freq)
+            hist_data[code] = df
+            if persist:
+                df.to_csv(os.path.join(folder, '%s.csv' % code))
+            print('retrieved hist data for %s' % code)
+        except Exception as ex:
             try:
-                df = ts.get_hist_data(code, start, end, ktype=type)
-                hist_data[code] = df
-                if persist:
-                    df.to_csv(os.path.join(storage_path, '%s.csv' % code))
-                print('retrieved hist data for %s' % code)
-            except Exception as ex:
-                try:
-                    print('error occurred in retrieving {}: {}'.format(code, ex))
-                except Exception as innerex:
-                    print('exception: {}'.format(innerex))
+                print('error occurred in retrieving {}: {}'.format(code, ex))
+            except Exception as innerex:
+                print('exception: {}'.format(innerex))
+            finally:
+                return False
     # return pd.Panel(hist_data)
-    return storage_path
+    return True
 
 
 def collect_report_data(year, term):
     try:
-        report_data_path = os.path.join(BASE_FOLDER, 'report')
+        report_data_path = os.path.join(root_data_path, 'report')
         if not os.path.isdir(report_data_path):
             os.makedirs(report_data_path)
         path = os.path.join(report_data_path, '{}-{}.csv'.format(year, term))
@@ -58,14 +63,12 @@ def collect_report_data(year, term):
         return None
 
 
-def collect_basic_data():
-    basic_data_path = os.path.join(BASE_FOLDER, 'basics')
-    if not os.path.exists(basic_data_path):
-        os.makedirs(basic_data_path)
-    path = os.path.join(basic_data_path, 'basic.csv')
-    if not os.path.exists(path):
-        ts.get_stock_basics().to_csv(path)
-    return path
+def tu_basic_data(folder):
+    os.makedirs(folder, exist_ok=True)
+    path = os.path.join(folder, 'basic.csv')
+    df = ts.pro_api().stock_basic(exchange='', list_status='L', fields='ts_code,symbol,name,area,industry,list_date')
+    df.to_csv(path)
+    return df
 
 
 def get_financial_data(terms=1, exclude_cyb=True, sample=0, persist=False):
@@ -73,12 +76,16 @@ def get_financial_data(terms=1, exclude_cyb=True, sample=0, persist=False):
 
 
 if __name__ == "__main__":
-    collect_hist_data(start='2016-12-1', exclude_cyb=True, type='w', persist=True)
+    if len(sys.argv) < 3:
+        raise ValueError('wrong arguments. e.g. \"python collector.py 20210101 D\"')
+    start_date = datetime.datetime.strptime(sys.argv[1].strip(), '%Y%m%d')
+    freq = sys.argv[2]
+    end_date = datetime.datetime.today()
 
-    # get_report_data(2016, 3)
-    # get_report_data(2016, 2)
-    # get_report_data(2016, 1)
-    # get_report_data(2015, 4)
-
-    # get_basic_data()
+    ts.set_token('3cf89e9c77146b4d041f7aea8f8e93c1ef887581a586bcb14f97f510')
+    root_data_path = os.path.join(os.getcwd(), BASE_FOLDER)
+    basics = tu_basic_data(os.path.join(root_data_path, 'basics'))
+    hist_folder_name = 'hist-{}-{:%y%m%d}-{:%y%m%d}'.format(freq, start_date, end_date)
+    tu_hist_data(os.path.join(root_data_path, hist_folder_name), basics['ts_code'], start_date, end_date, freq)
+    # collect_hist_data(start='2021-1-1', exclude_cyb=True, type='d', persist=True)
 

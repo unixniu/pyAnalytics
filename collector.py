@@ -8,6 +8,7 @@ import os
 import random
 import os.path
 import datetime
+import akshare as ak
 
 from tushare.stock.fundamental import get_report_data
 
@@ -16,37 +17,54 @@ root_data_path = ''
 tushare_api = ts.pro_api('3cf89e9c77146b4d041f7aea8f8e93c1ef887581a586bcb14f97f510')
 
 def tu_hist_data(folder, codes, start=None, end=None, freq='D', sample=0, persist=True):
-    # if target storage path already exists, consider the data has been collected already
-    if os.path.isdir(folder):
-        return
-
-    os.makedirs(folder)
+    os.makedirs(folder, exist_ok=True)
     hist_data = {}
     codes_selected = codes if sample == 0 else random.sample(codes, sample)
     
     for code in codes_selected:
-        try:
-            df = ts.pro_bar(
-                ts_code=code,
-                asset='E',
-                adj='qfq', 
-                start_date=start.strftime('%Y%m%d'), 
-                end_date=end.strftime('%Y%m%d'), 
-                freq=freq)
-            hist_data[code] = df
-            if persist:
-                df.to_csv(os.path.join(folder, '%s.csv' % code))
-            print('retrieved hist data for %s' % code)
-        except Exception as ex:
+        path = os.path.join(folder, '%s.csv' % code)
+        if not (persist and os.path.isfile(path)):
             try:
-                print('error occurred in retrieving {}: {}'.format(code, ex))
-            except Exception as innerex:
-                print('exception: {}'.format(innerex))
-            finally:
-                return False
+                df = ts.pro_bar(
+                    ts_code=code,
+                    asset='E',
+                    adj='qfq', 
+                    start_date=start.strftime('%Y%m%d'), 
+                    end_date=end.strftime('%Y%m%d'), 
+                    freq=freq)
+                hist_data[code] = df
+                if persist:
+                    df.to_csv(path)
+                print('retrieved hist data for %s' % code)
+            except Exception as ex:
+                try:
+                    print('error occurred in retrieving {}: {}'.format(code, ex))
+                except Exception as innerex:
+                    print('exception: {}'.format(innerex))
     # return pd.Panel(hist_data)
     return True
 
+def ak_hist_data(folder, codes, start=None, end=None, freq='D', sample=0, persist=True):
+    os.makedirs(folder, exist_ok=True)
+    hist_data = {}
+    codes_selected = codes if sample == 0 else random.sample(codes, sample)
+    
+    for code in codes_selected:
+        path = os.path.join(folder, '%s.csv' % code)
+        if not (persist and os.path.isfile(path)):
+            try:
+                df = ak.stock_zh_a_hist(symbol=code.split('.')[0], start_date=start_date, end_date=end_date, adjust='qfq')
+                hist_data[code] = df
+                if persist:
+                    df.to_csv(path)
+                print('retrieved hist data for %s' % code)
+            except Exception as ex:
+                try:
+                    print('error occurred in retrieving {}: {}'.format(code, ex))
+                except Exception as innerex:
+                    print('exception: {}'.format(innerex))
+    # return pd.Panel(hist_data)
+    return True
 
 def collect_report_data(year, term):
     try:
@@ -86,6 +104,7 @@ if __name__ == "__main__":
     root_data_path = os.path.join(os.getcwd(), BASE_FOLDER)
     basics = tu_basic_data(os.path.join(root_data_path, 'basics'))
     hist_folder_name = 'hist-{}-{:%y%m%d}-{:%y%m%d}'.format(freq, start_date, end_date)
-    tu_hist_data(os.path.join(root_data_path, hist_folder_name), basics['ts_code'], start_date, end_date, freq)
-    # collect_hist_data(start='2021-1-1', exclude_cyb=True, type='d', persist=True)
+    ak_hist_data(os.path.join(root_data_path, hist_folder_name), basics['ts_code'], start_date, end_date, freq)
+    #tu_hist_data(os.path.join(root_data_path, hist_folder_name), basics['ts_code'], start_date, end_date, freq)
+    #collect_hist_data(start='2021-1-1', exclude_cyb=True, type='d', persist=True)
 

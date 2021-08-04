@@ -53,7 +53,20 @@ def ak_hist_data(folder, codes, start=None, end=None, freq='D', sample=0, persis
         path = os.path.join(folder, '%s.csv' % code)
         if not (persist and os.path.isfile(path)):
             try:
-                df = ak.stock_zh_a_hist(symbol=code.split('.')[0], start_date=start_date, end_date=end_date, adjust='qfq')
+                code = code[:code.find('.')]
+                df = ak.stock_zh_a_hist(symbol=code, start_date=start, end_date=end, adjust='qfq')
+                
+                df['date'] = pd.to_datetime(df['日期'], format='%Y-%m-%d')
+                df.set_index('date', inplace=True)
+
+                if freq == 'W' or freq == 'M':
+                    df = df.resample(freq).agg({'开盘':'first', '收盘':'last', '最高':'max', '最低':'min','成交量':'sum'})
+
+                # df['ma3'] = df['收盘'].rolling(window=3).mean()
+                df['ma5'] = df['收盘'].rolling(window=5).mean()
+
+                df['p_change'] = df['close'].pct_change()
+                df.rename(columns={'收盘':'close', '成交量':'volume'}, inplace=True)
                 hist_data[code] = df
                 if persist:
                     df.to_csv(path)
@@ -63,8 +76,7 @@ def ak_hist_data(folder, codes, start=None, end=None, freq='D', sample=0, persis
                     print('error occurred in retrieving {}: {}'.format(code, ex))
                 except Exception as innerex:
                     print('exception: {}'.format(innerex))
-    # return pd.Panel(hist_data)
-    return True
+    return hist_data
 
 def collect_report_data(year, term):
     try:

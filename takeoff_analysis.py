@@ -8,6 +8,7 @@ import glob
 import os
 import os.path
 import sys
+from enum import Enum
 
 DAILY_DATA_FOLDER = 'E:/analytics/stock/hist-D-2016-04-01-0718'
 DAILY_SAMPLE_PATH = 'E:/analytics/stock/hist/002415.csv'
@@ -64,20 +65,59 @@ def find_increase_trend(df, trend_threshold=3):
         std = round(df[:trend_start]['p_change'].std(), 2)
         return startdate, total_increase, trend_length, mean_increase, std, recent_below_mean_count
 
-def analyze_trend(folder, kind='w', trend_threshold=3, increase_threshold=10, max_recent_slowdown=1):
-    reg = re.compile(r'(\d{6}).csv')
-    stocks = {t[1].group(1):t[0] for t in ((x, reg.search(x)) for x in glob.glob(folder + '/*.csv')) if t[1]}
-    # [os.path.isfile(x) for x in list(stocks.values())[:5]]
+NUDGE_THRESHOLD = 0.02
+
+def do_analysis(df):
+    df['pct_change'] = df['close'].pct_change()
+    df['ma5_pct_change'] = df['ma5'].pct_change()
+    df['variation'] = df['ma5_pct_change'].map(variation, na_action='ignore')
+
+
+class Variation(Enum):
+    Increase = 1
+    UpNudge = 2
+    Flat = 3
+    DownNudge = 4
+    Decrease = 5
+
+
+def variation(pct_change):
+    if pct_change > NUDGE_THRESHOLD:
+        return Variation.Increase
+    elif pct_change > 0:
+        return Variation.UpNudge
+    elif pct_change == 0:
+        return Variation.Flat
+    elif pct_change > -1 * NUDGE_THRESHOLD:
+        return Variation.DownNudge
+    else:
+        return Variation.Decrease
+
+
+def analyze_trend(data, folder, kind='w', trend_threshold=3, increase_threshold=10, max_recent_slowdown=1):
+    # load stock data from files
+    if data is None and folder:
+        data = {}
+        reg = re.compile(r'(\d{6}).csv')
+        stockfiles = {t[1].group(1):t[0] for t in ((x, reg.search(x)) for x in glob.glob(folder + '/*.csv')) if t[1]}
+        for code in stockfiles:
+            try:
+                df = pd.read_csv(stockfiles[code], index_col=0, parse_dates=True, \
+                                usecols=['date', 'close', 'p_change', 'ma5'], \
+                                error_bad_lines=False)
+                if len(df) == 0:
+                    continue
+                data[code] = df
+            except Exception as ex:
+                print('error reading file %s: %s' % (stockfiles[code], ex))
+    if not data:
+        return None
+
     resultmap = {}
     latest = pd.Timestamp('20000101')
-    for code in stocks:
+    for code in data:
         try:
-            # print('processing ', code)
-            df = pd.read_csv(stocks[code], index_col=0, parse_dates=True, \
-                             usecols=['date', 'close', 'p_change', 'ma5', 'ma10', 'ma20'], \
-                             error_bad_lines=False)
-            if len(df) == 0:
-                continue
+            df = data[code]
 
             # delete first entry if it doesn't stand for weekly data (whose timestamp should be Fri)
             # usually daily data for date at retrieval is also collected
@@ -104,7 +144,6 @@ def analyze_trend(folder, kind='w', trend_threshold=3, increase_threshold=10, ma
     df = pd.DataFrame.from_dict(resultmap, orient='index')
     print(df.head())
     df.columns = ['startdate', 'increase', 'length', 'mean', 'std', 'RSL']
-    # print(df.head())
     return df
 
 def get_basic_data(basic_data_path):

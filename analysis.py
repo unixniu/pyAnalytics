@@ -31,6 +31,7 @@ def find_lis(s):
             break
     return lis
 
+
 def find_recent_increase(filepath):
     try:
         df = pd.read_csv(filepath, index_col=0, parse_dates=True,

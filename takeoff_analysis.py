@@ -65,33 +65,39 @@ def find_increase_trend(df, trend_threshold=3):
         std = round(df[:trend_start]['p_change'].std(), 2)
         return startdate, total_increase, trend_length, mean_increase, std, recent_below_mean_count
 
+
 NUDGE_THRESHOLD = 0.02
 
-def do_analysis(df):
+def prepare(df):
     df['pct_change'] = df['close'].pct_change()
     df['ma5_pct_change'] = df['ma5'].pct_change()
-    df['variation'] = df['ma5_pct_change'].map(variation, na_action='ignore')
 
 
-class Variation(Enum):
-    Increase = 1
-    UpNudge = 2
-    Flat = 3
-    DownNudge = 4
-    Decrease = 5
+def analyze(df):
+    df['var'] = df['ma5_pct_change'].map(variation, na_action='ignore')
+    df['norm_var'] = df['var'].map(lambda x: 0 if abs(x) < 2 else x )
+    df.dropna(inplace=True)
+
+    grouped = df.groupby((df['norm_var'] != df['norm_var'].shift()).cumsum(), as_index=False)
+    trend = grouped.agg(trend=('norm_var', 'first'), len=('norm_var', 'count'))
+    trend['prev'], trend['next'] = trend['trend'].shift(), trend['trend'].shift(-1)
+    trend['norm_trend'] = trend.apply(lambda x: x['prev'] if x['trend'] == 0 and x['len'] <= 2 and x['prev'] == x['next'] else x['trend'], axis=1)
+    
+    grouped = trend.groupby((trend['norm_trend'] != trend['norm_trend'].shift()).cumsum(), as_index=False)
+    final_trend = grouped.agg(trend=('norm_trend', 'first'), len=('len', 'sum'))
 
 
 def variation(pct_change):
     if pct_change > NUDGE_THRESHOLD:
-        return Variation.Increase
+        return 2
     elif pct_change > 0:
-        return Variation.UpNudge
+        return 1
     elif pct_change == 0:
-        return Variation.Flat
+        return 0
     elif pct_change > -1 * NUDGE_THRESHOLD:
-        return Variation.DownNudge
+        return -1
     else:
-        return Variation.Decrease
+        return -2
 
 
 def analyze_trend(data, folder, kind='w', trend_threshold=3, increase_threshold=10, max_recent_slowdown=1):

@@ -74,20 +74,47 @@ def prepare(df):
 
 
 def analyze(df):
-    df['var'] = df['ma5_pct_change'].map(variation, na_action='ignore')
+    variation(df, 'ma5_pct_change', 'var')
     df['norm_var'] = df['var'].map(lambda x: 0 if abs(x) < 2 else x )
     df.dropna(inplace=True)
 
     grouped = df.groupby((df['norm_var'] != df['norm_var'].shift()).cumsum(), as_index=False)
     trend = grouped.agg(trend=('norm_var', 'first'), len=('norm_var', 'count'))
     trend['prev'], trend['next'] = trend['trend'].shift(), trend['trend'].shift(-1)
+    # in case of short shaker (within 2 slots) surrended by same trend, normalize it to that trend
     trend['norm_trend'] = trend.apply(lambda x: x['prev'] if x['trend'] == 0 and x['len'] <= 2 and x['prev'] == x['next'] else x['trend'], axis=1)
     
     grouped = trend.groupby((trend['norm_trend'] != trend['norm_trend'].shift()).cumsum(), as_index=False)
     final_trend = grouped.agg(trend=('norm_trend', 'first'), len=('len', 'sum'))
+    return final_trend
 
 
-def variation(pct_change):
+def variation(df, pct_change_column, varation_column_name='var'):
+    if len(df) <= 1:
+        return
+
+    colPos = 0
+    try:
+        colPos = df.columns.get_loc(pct_change_column)
+    except:
+        return
+
+    df[varation_column_name] = pd.NA
+
+    for i in range(1, len(df)):
+        current_pct_change = df.iat[i, colPos]
+        if pd.isna(current_pct_change):
+            continue
+        else:
+            var = map_variation(current_pct_change)
+            prev = df.at[df.index[i-1], varation_column_name]
+            if not pd.isna(prev):
+                if abs(prev) == 2 and var * prev > 0:
+                    var = prev
+            df.at[df.index[i], varation_column_name] = var
+        
+
+def map_variation(pct_change):
     if pct_change > NUDGE_THRESHOLD:
         return 2
     elif pct_change > 0:

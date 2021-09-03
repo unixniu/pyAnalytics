@@ -12,6 +12,8 @@ import akshare as ak
 
 from tushare.stock.fundamental import get_report_data
 
+import takeoff_analysis
+
 BASE_FOLDER = 'data'
 root_data_path = ''
 tushare_api = ts.pro_api('3cf89e9c77146b4d041f7aea8f8e93c1ef887581a586bcb14f97f510')
@@ -47,7 +49,7 @@ def tu_hist_data(folder, codes, start=None, end=None, freq='D', sample=0, persis
 def ak_hist_data(folder, codes, start=None, end=None, freq='D', sample=0, persist=True):
     os.makedirs(folder, exist_ok=True)
     hist_data = {}
-    codes_selected = codes if sample == 0 else random.sample(codes, sample)
+    codes_selected = codes if sample == 0 else random.sample(codes.tolist(), sample)
     
     for code in codes_selected:
         path = os.path.join(folder, '%s.csv' % code)
@@ -65,7 +67,7 @@ def ak_hist_data(folder, codes, start=None, end=None, freq='D', sample=0, persis
                 # df['ma3'] = df['收盘'].rolling(window=3).mean()
                 df['ma5'] = df['收盘'].rolling(window=5).mean()
 
-                df['p_change'] = df['close'].pct_change()
+                # df['p_change'] = df['close'].pct_change()
                 df.rename(columns={'收盘':'close', '成交量':'volume'}, inplace=True)
                 hist_data[code] = df
                 if persist:
@@ -116,7 +118,22 @@ if __name__ == "__main__":
     root_data_path = os.path.join(os.getcwd(), BASE_FOLDER)
     basics = tu_basic_data(os.path.join(root_data_path, 'basics'))
     hist_folder_name = 'hist-{}-{:%y%m%d}-{:%y%m%d}'.format(freq, start_date, end_date)
-    ak_hist_data(os.path.join(root_data_path, hist_folder_name), basics['ts_code'], start_date, end_date, freq)
+    histdata = ak_hist_data(os.path.join(root_data_path, hist_folder_name), basics['ts_code'], start_date, end_date, freq, 10, False)
+    
+    codes = []
+    analysis_result = []
+    for code in histdata:
+        df = histdata[code]
+        try:
+            result = takeoff_analysis.analyze(df)
+            codes.append(code)
+            analysis_result.append(result)
+        except Exception as ex:
+            print("analyze {} failed: {}".format(code, ex))
+    analysis_df = pd.DataFrame(analysis_result, index=codes)
+    analysis_file_path = os.path.join(root_data_path, hist_folder_name, 'analysis.csv')
+    analysis_df.to_csv(analysis_file_path)
+    
     #tu_hist_data(os.path.join(root_data_path, hist_folder_name), basics['ts_code'], start_date, end_date, freq)
     #collect_hist_data(start='2021-1-1', exclude_cyb=True, type='d', persist=True)
 

@@ -66,29 +66,72 @@ def find_increase_trend(df, trend_threshold=3):
         return startdate, total_increase, trend_length, mean_increase, std, recent_below_mean_count
 
 
-NUDGE_THRESHOLD = 0.02
 
-def prepare(df):
+def analyze(df, recent_n1=4, recent_n2=8, recent_n3=12):
+    result = {}
+
+    # change perctange from different dimensions
+    close_col_pos = df.columns.get_loc('close')
+    result['recent_' + str(recent_n1)] = last_n_increase(df, close_col_pos, recent_n1)
+    result['recent_' + str(recent_n2)] = last_n_increase(df, close_col_pos, recent_n2)
+    result['recent_' + str(recent_n3)] = last_n_increase(df, close_col_pos, recent_n3)
+    # idxmin, idxmax = df['close'].idxmin(), df['close'].idxmax()
+    first, high, low, last = df['close'][0], df['close'].max(), df['close'].min(), df['close'][len(df)-1]
+    result['change_from_high'] = round((last / high - 1) * 100, 2)
+    result['change_from_low'] = round((last / low - 1) * 100, 2)
+    result['change_since_start'] = round((last / first - 1) * 100, 2)
+    result['high_over_low'] = round((high / low - 1) * 100, 2)
+
+    trend_df = trend(df)
+    # take in last n trend periods (n is 3 by default)
+    for i in range(1, 4):
+        result['trend-{}'.format(i)] = trend_df['trend'].iat[i * -1]
+        result['trend-{}-len'.format(i)] = trend_df['duration'].iat[i * -1]
+        result['trend-{}-scale'.format(i)] = trend_df['scale'].iat[i * -1]
+    return result
+
+# get increase percent over last n slots based on close price of last slot and -(n+1) slot
+def last_n_increase(df, close_col_pos, n):
+    return np.nan if len(df) < n+1 else pct_change(df, close_col_pos, len(df)-n-1, len(df)-1)
+
+# calculate change pencent of y-th element over x-th element based on specified column value
+def pct_change(df, col, start, end):
+    return round((df.iat[end, col] / df.iat[start, col] - 1) * 100, 2)
+
+def trend(df):
+    #  prepare necessary input
     df['pct_change'] = df['close'].pct_change()
     df['ma5_pct_change'] = df['ma5'].pct_change()
 
-
-def analyze(df):
+    # determine variation by MA instead of close price to smooth trend
     variation(df, 'ma5_pct_change', 'var')
+    # normalize variation of shake (1 or -1) to value 0 
     df['norm_var'] = df['var'].map(lambda x: 0 if abs(x) < 2 else x )
-    df.dropna(inplace=True)
+    # df.dropna(inplace=True)
 
     grouped = df.groupby((df['norm_var'] != df['norm_var'].shift()).cumsum(), as_index=False)
-    trend = grouped.agg(trend=('norm_var', 'first'), len=('norm_var', 'count'))
+    trend = grouped.agg(trend=('norm_var', 'first'), duration=('norm_var', 'count'))
     trend['prev'], trend['next'] = trend['trend'].shift(), trend['trend'].shift(-1)
-    # in case of short shaker (within 2 slots) surrended by same trend, normalize it to that trend
-    trend['norm_trend'] = trend.apply(lambda x: x['prev'] if x['trend'] == 0 and x['len'] <= 2 and x['prev'] == x['next'] else x['trend'], axis=1)
+    # in case of short shake (within 2 slots) surrended by same trend, normalize it to that trend
+    trend['norm_trend'] = trend.apply(lambda x: x['prev'] if x['trend'] == 0 and x['duration'] <= 2 and x['prev'] == x['next'] else x['trend'], axis=1)
     
     grouped = trend.groupby((trend['norm_trend'] != trend['norm_trend'].shift()).cumsum(), as_index=False)
-    final_trend = grouped.agg(trend=('norm_trend', 'first'), len=('len', 'sum'))
+    final_trend = grouped.agg(trend=('norm_trend', 'first'), duration=('duration', 'sum'))
+    final_trend['scale'] = np.nan
+    accumulator = 0
+    close_col_pos = df.columns.get_loc('close')
+    # caculate scale of each trending period backward
+    for i in range(len(final_trend)-1, 0, -1):
+        # ending index of current trend period
+        end = len(df) - accumulator - 1
+        duration = final_trend['duration'][i]
+        # starting index of current trend period
+        start = len(df) - accumulator - duration - 1  
+        accumulator += duration
+        final_trend['scale'][i] = pct_change(df, close_col_pos, start, end)
     return final_trend
 
-
+# calculate variation (rise, drop or shake) for each slot
 def variation(df, pct_change_column, varation_column_name='var'):
     if len(df) <= 1:
         return
@@ -99,20 +142,31 @@ def variation(df, pct_change_column, varation_column_name='var'):
     except:
         return
 
-    df[varation_column_name] = pd.NA
+    df[varation_column_name] = np.nan
 
-    for i in range(1, len(df)):
+    for i in range(0, len(df)):
         current_pct_change = df.iat[i, colPos]
         if pd.isna(current_pct_change):
             continue
         else:
             var = map_variation(current_pct_change)
-            prev = df.at[df.index[i-1], varation_column_name]
-            if not pd.isna(prev):
-                if abs(prev) == 2 and var * prev > 0:
-                    var = prev
-            df.at[df.index[i], varation_column_name] = var
+            if i > 0:
+                prev = df.at[df.index[i-1], varation_column_name]
+                # align shake to previous trend (2 or -2) if they are same direction
+                if not pd.isna(prev):
+                    if abs(prev) == 2 and var * prev > 0:
+                        var = prev
+                df.at[df.index[i], varation_column_name] = var
+
+    # align shake to subseuqnet trend (2 or -2) if they are same direction
+    for i in range(len(df)-2, -1, -1):
+        var = df[varation_column_name][i]
+        if (not pd.isna(var)) and abs(var) < 2:
+            next = df[varation_column_name][i+1]
+            if abs(next) == 2 and var * next > 0:
+                df.at[df.index[i], varation_column_name] = next
         
+NUDGE_THRESHOLD = 0.02
 
 def map_variation(pct_change):
     if pct_change > NUDGE_THRESHOLD:

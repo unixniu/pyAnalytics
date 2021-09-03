@@ -23,7 +23,7 @@ collector.collect_report_data(2016, 2)
 collector.collect_report_data(2016, 1)
 report_data_path = collector.collect_report_data(2015, 4)
 
-basic_data_path = collector.collect_basic_data()
+basic_data_path = collector.tu_basic_data()
 
 df = takeoff_analysis.analyze_trend(hist_data_path, kind=freq, increase_threshold=threshold, max_recent_slowdown=2)
 print('done analyzing trend analysis, found %d records' % len(df))
